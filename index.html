@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chitchess - Chess Game</title>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      background-color: #222;
+      color: white;
+      font-family: Arial, sans-serif;
+      user-select: none;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
+    h1 {
+      margin: 10px 0 5px;
+    }
+
+    #logo {
+      width: 100px;
+      height: auto;
+      margin-bottom: 10px;
+    }
+
+    #topBar {
+      width: 480px;
+      position: relative;
+      margin-bottom: 12px;
+    }
+
+    #toggleContainer {
+      position: absolute;
+      top: 0;
+      right: 0;
+      user-select: none;
+    }
+
+    #controls {
+      margin-bottom: 10px;
+      text-align: left;
+    }
+
+    #chessboard {
+      display: grid;
+      grid-template-columns: repeat(8, 60px);
+      grid-template-rows: repeat(8, 60px);
+      width: 480px;
+      height: 480px;
+      border: 2px solid #333;
+    }
+
+    .square {
+      position: relative;
+      width: 60px;
+      height: 60px;
+      box-sizing: border-box;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 38px;
+    }
+
+    .light {
+      background-color: #f0d9b5;
+    }
+
+    .dark {
+      background-color: #b58863;
+    }
+
+    .piece {
+      pointer-events: none;
+      font-size: 38px;
+      line-height: 1;
+    }
+
+    .highlight-dot {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background-color: lightgreen;
+      opacity: 0.8;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #turnInfo {
+      margin: 10px auto 20px;
+      font-weight: bold;
+      width: 480px;
+      text-align: center;
+    }
+
+    input[type="text"] {
+      width: 130px;
+      padding: 5px;
+      margin: 0 5px 10px 0;
+      border-radius: 4px;
+      border: 1px solid #444;
+      background: #333;
+      color: white;
+    }
+
+    button {
+      padding: 7px 14px;
+      border: none;
+      border-radius: 4px;
+      background-color: #3a86ff;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background-color: #265dca;
+    }
+
+    label {
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Logo -->
+  <img src="logo.png" id="logo" alt="Logo" />
+
+  <h1>Chitchess</h1>
+
+  <div id="topBar">
+    <div id="controls">
+      <input type="text" id="whiteName" placeholder="White player name" />
+      <input type="text" id="blackName" placeholder="Black player name" />
+      <button id="startBtn">Start Game</button>
+    </div>
+
+    <div id="toggleContainer">
+      <label>
+        <input type="checkbox" id="toggleLegalMoves" checked />
+        Show Legal Moves
+      </label>
+    </div>
+  </div>
+
+  <div id="turnInfo">Turn: White</div>
+
+  <div id="chessboard"></div>
+
+  <!-- Sounds -->
+  <audio id="moveSound" src="move.wav" preload="auto"></audio>
+  <audio id="captureSound" src="capture.wav" preload="auto"></audio>
+
+  <script>
+    const unicodePieces = {
+      'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
+      'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟',
+    };
+
+    const initialBoard = [
+      ['r','n','b','q','k','b','n','r'],
+      ['p','p','p','p','p','p','p','p'],
+      ['','','','','','','',''],
+      ['','','','','','','',''],
+      ['','','','','','','',''],
+      ['','','','','','','',''],
+      ['P','P','P','P','P','P','P','P'],
+      ['R','N','B','Q','K','B','N','R'],
+    ];
+
+    let board = [];
+    let turn = 'w';
+    let selected = null;
+    let legalMoves = [];
+    let gameOver = false;
+    let whiteName = "White";
+    let blackName = "Black";
+
+    const moveSound = document.getElementById("moveSound");
+    const captureSound = document.getElementById("captureSound");
+    const toggleLegalMovesCheckbox = document.getElementById("toggleLegalMoves");
+
+    function cloneBoard(b){
+      return b.map(row => row.slice());
+    }
+
+    function insideBoard(r,c){
+      return r >= 0 && r < 8 && c >= 0 && c < 8;
+    }
+
+    function isWhite(p){
+      return p && p === p.toUpperCase();
+    }
+
+    function isBlack(p){
+      return p && p === p.toLowerCase();
+    }
+
+    function renderBoard(){
+      const boardDiv = document.getElementById("chessboard");
+      boardDiv.innerHTML = "";
+
+      const showLegalMoves = toggleLegalMovesCheckbox.checked;
+
+      for(let r=0; r<8; r++){
+        for(let c=0; c<8; c++){
+          const square = document.createElement("div");
+          square.classList.add("square");
+          square.classList.add((r+c)%2 === 0 ? "light" : "dark");
+          square.dataset.r = r;
+          square.dataset.c = c;
+
+          const piece = board[r][c];
+          if(piece){
+            const pieceSpan = document.createElement("span");
+            pieceSpan.textContent = unicodePieces[piece] || piece;
+            pieceSpan.classList.add("piece");
+            pieceSpan.style.color = isWhite(piece) ? "white" : "#111";
+            pieceSpan.style.textShadow = isWhite(piece) ? "0 0 4px black" : "0 0 4px white";
+            square.appendChild(pieceSpan);
+          }
+
+          if(showLegalMoves && legalMoves.some(m => m[0] === r && m[1] === c)){
+            const dot = document.createElement("div");
+            dot.classList.add("highlight-dot");
+            square.appendChild(dot);
+          }
+
+          square.addEventListener("click", () => onSquareClick(r, c));
+          boardDiv.appendChild(square);
+        }
+      }
+    }
+
+    function generateLegalMoves(r, c){
+      const moves = [];
+      const p = board[r][c];
+      if(!p) return moves;
+      const white = isWhite(p);
+      const directions = {
+        'P': white ? [[-1,0]] : [[1,0]],
+        'N': [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]],
+        'B': [[-1,-1],[-1,1],[1,-1],[1,1]],
+        'R': [[-1,0],[1,0],[0,-1],[0,1]],
+        'Q': [[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]],
+        'K': [[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]],
+      };
+
+      function canCapture(r2,c2){
+        if(!insideBoard(r2,c2)) return false;
+        const target = board[r2][c2];
+        if(!target) return false;
+        if(white) return isBlack(target);
+        else return isWhite(target);
+      }
+
+      function canMove(r2,c2){
+        if(!insideBoard(r2,c2)) return false;
+        return board[r2][c2] === '';
+      }
+
+      if(p.toUpperCase() === 'P'){
+        const forward = white ? -1 : 1;
+        if(canMove(r+forward,c)){
+          moves.push([r+forward,c]);
+          if((white && r===6) || (!white && r===1)){
+            if(canMove(r+2*forward,c)){
+              moves.push([r+2*forward,c]);
+            }
+          }
+        }
+        if(canCapture(r+forward,c-1)) moves.push([r+forward,c-1]);
+        if(canCapture(r+forward,c+1)) moves.push([r+forward,c+1]);
+      } else if(p.toUpperCase() === 'N'){
+        for(let [dr,dc] of directions['N']){
+          const r2 = r+dr, c2 = c+dc;
+          if(insideBoard(r2,c2)){
+            const target = board[r2][c2];
+            if(!target || (white ? isBlack(target) : isWhite(target))){
+              moves.push([r2,c2]);
+            }
+          }
+        }
+      } else if(['B','R','Q'].includes(p.toUpperCase())){
+        let dirs = p.toUpperCase() === 'B' ? directions['B']
+                  : p.toUpperCase() === 'R' ? directions['R']
+                  : directions['Q'];
+        for(let [dr,dc] of dirs){
+          for(let i=1; i<8; i++){
+            const r2 = r+dr*i, c2 = c+dc*i;
+            if(!insideBoard(r2,c2)) break;
+            const target = board[r2][c2];
+            if(!target){
+              moves.push([r2,c2]);
+            } else {
+              if(white ? isBlack(target) : isWhite(target)){
+                moves.push([r2,c2]);
+              }
+              break;
+            }
+          }
+        }
+      } else if(p.toUpperCase() === 'K'){
+        for(let [dr,dc] of directions['K']){
+          const r2 = r+dr, c2 = c+dc;
+          if(insideBoard(r2,c2)){
+            const target = board[r2][c2];
+            if(!target || (white ? isBlack(target) : isWhite(target))){
+              moves.push([r2,c2]);
+            }
+          }
+        }
+      }
+
+      return moves;
+    }
+
+    function onSquareClick(r,c){
+      if(gameOver) return;
+
+      const piece = board[r][c];
+
+      if(selected){
+        if(legalMoves.some(m => m[0] === r && m[1] === c)){
+          const [sr, sc] = selected;
+          const captured = board[r][c] !== '';
+          board[r][c] = board[sr][sc];
+          board[sr][sc] = '';
+          selected = null;
+          legalMoves = [];
+          turn = turn === 'w' ? 'b' : 'w';
+          updateTurnInfo();
+
+          if(captured){
+            captureSound.play();
+          } else {
+            moveSound.play();
+          }
+
+          renderBoard();
+          return;
+        }
+
+        if(piece && ((turn === 'w' && isWhite(piece)) || (turn === 'b' && isBlack(piece)))){
+          selected = [r,c];
+          legalMoves = generateLegalMoves(r,c);
+          renderBoard();
+          return;
+        }
+
+        selected = null;
+        legalMoves = [];
+        renderBoard();
+        return;
+      } else {
+        if(piece && ((turn === 'w' && isWhite(piece)) || (turn === 'b' && isBlack(piece)))){
+          selected = [r,c];
+          legalMoves = generateLegalMoves(r,c);
+          renderBoard();
+        }
+      }
+    }
+
+    function updateTurnInfo(){
+      const turnInfo = document.getElementById("turnInfo");
+      const currentPlayerName = turn === 'w' ? whiteName : blackName;
+      turnInfo.textContent = `Turn: ${currentPlayerName} (${turn === 'w' ? "White" : "Black"})`;
+    }
+
+    function startGame(){
+      whiteName = document.getElementById("whiteName").value.trim() || "White";
+      blackName = document.getElementById("blackName").value.trim() || "Black";
+      board = cloneBoard(initialBoard);
+      turn = 'w';
+      selected = null;
+      legalMoves = [];
+      gameOver = false;
+      updateTurnInfo();
+      renderBoard();
+    }
+
+    document.getElementById("startBtn").addEventListener("click", startGame);
+    toggleLegalMovesCheckbox.addEventListener("change", renderBoard);
+    startGame();
+  </script>
+</body>
+</html>
