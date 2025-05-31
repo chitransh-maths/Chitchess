@@ -135,13 +135,38 @@
     label {
       cursor: pointer;
     }
+
+    /* Promotion popup styling */
+    #promotionPopup {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+
+    #promotionContent {
+      background: #444;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+    }
+
+    .promoPiece {
+      font-size: 40px;
+      margin: 10px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
 
-  <!-- Logo -->
   <img src="logo.png" id="logo" alt="Logo" />
-
   <h1>Chitchess</h1>
 
   <div id="topBar">
@@ -150,22 +175,24 @@
       <input type="text" id="blackName" placeholder="Black player name" />
       <button id="startBtn">Start Game</button>
     </div>
-
     <div id="toggleContainer">
-      <label>
-        <input type="checkbox" id="toggleLegalMoves" checked />
-        Show Legal Moves
-      </label>
+      <label><input type="checkbox" id="toggleLegalMoves" checked /> Show Legal Moves</label>
     </div>
   </div>
 
   <div id="turnInfo">Turn: White</div>
-
   <div id="chessboard"></div>
 
-  <!-- Sounds -->
   <audio id="moveSound" src="move.wav" preload="auto"></audio>
   <audio id="captureSound" src="capture.wav" preload="auto"></audio>
+
+  <!-- Promotion Popup -->
+  <div id="promotionPopup">
+    <div id="promotionContent">
+      <h3>Choose Promotion</h3>
+      <div id="promoChoices"></div>
+    </div>
+  </div>
 
   <script>
     const unicodePieces = {
@@ -191,45 +218,33 @@
     let gameOver = false;
     let whiteName = "White";
     let blackName = "Black";
+    let promotionCallback = null;
 
     const moveSound = document.getElementById("moveSound");
     const captureSound = document.getElementById("captureSound");
     const toggleLegalMovesCheckbox = document.getElementById("toggleLegalMoves");
 
-    function cloneBoard(b){
-      return b.map(row => row.slice());
-    }
-
-    function insideBoard(r,c){
-      return r >= 0 && r < 8 && c >= 0 && c < 8;
-    }
-
-    function isWhite(p){
-      return p && p === p.toUpperCase();
-    }
-
-    function isBlack(p){
-      return p && p === p.toLowerCase();
-    }
+    function cloneBoard(b){ return b.map(row => row.slice()); }
+    function insideBoard(r,c){ return r >= 0 && r < 8 && c >= 0 && c < 8; }
+    function isWhite(p){ return p && p === p.toUpperCase(); }
+    function isBlack(p){ return p && p === p.toLowerCase(); }
 
     function renderBoard(){
       const boardDiv = document.getElementById("chessboard");
       boardDiv.innerHTML = "";
-
       const showLegalMoves = toggleLegalMovesCheckbox.checked;
 
       for(let r=0; r<8; r++){
         for(let c=0; c<8; c++){
           const square = document.createElement("div");
-          square.classList.add("square");
-          square.classList.add((r+c)%2 === 0 ? "light" : "dark");
+          square.classList.add("square", (r+c)%2 === 0 ? "light" : "dark");
           square.dataset.r = r;
           square.dataset.c = c;
 
           const piece = board[r][c];
           if(piece){
             const pieceSpan = document.createElement("span");
-            pieceSpan.textContent = unicodePieces[piece] || piece;
+            pieceSpan.textContent = unicodePieces[piece];
             pieceSpan.classList.add("piece");
             pieceSpan.style.color = isWhite(piece) ? "white" : "#111";
             pieceSpan.style.textShadow = isWhite(piece) ? "0 0 4px black" : "0 0 4px white";
@@ -253,6 +268,7 @@
       const p = board[r][c];
       if(!p) return moves;
       const white = isWhite(p);
+
       const directions = {
         'P': white ? [[-1,0]] : [[1,0]],
         'N': [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]],
@@ -266,13 +282,11 @@
         if(!insideBoard(r2,c2)) return false;
         const target = board[r2][c2];
         if(!target) return false;
-        if(white) return isBlack(target);
-        else return isWhite(target);
+        return white ? isBlack(target) : isWhite(target);
       }
 
       function canMove(r2,c2){
-        if(!insideBoard(r2,c2)) return false;
-        return board[r2][c2] === '';
+        return insideBoard(r2,c2) && board[r2][c2] === '';
       }
 
       if(p.toUpperCase() === 'P'){
@@ -298,9 +312,7 @@
           }
         }
       } else if(['B','R','Q'].includes(p.toUpperCase())){
-        let dirs = p.toUpperCase() === 'B' ? directions['B']
-                  : p.toUpperCase() === 'R' ? directions['R']
-                  : directions['Q'];
+        let dirs = directions[p.toUpperCase()];
         for(let [dr,dc] of dirs){
           for(let i=1; i<8; i++){
             const r2 = r+dr*i, c2 = c+dc*i;
@@ -331,29 +343,54 @@
       return moves;
     }
 
+    function showPromotion(r, c, callback){
+      const popup = document.getElementById("promotionPopup");
+      const promoChoices = document.getElementById("promoChoices");
+      popup.style.display = "flex";
+      promoChoices.innerHTML = "";
+      const white = turn === 'w';
+      const pieces = white ? ['Q','R','B','N'] : ['q','r','b','n'];
+
+      pieces.forEach(p => {
+        const span = document.createElement("span");
+        span.className = "promoPiece";
+        span.textContent = unicodePieces[p];
+        span.onclick = () => {
+          popup.style.display = "none";
+          callback(p);
+        };
+        promoChoices.appendChild(span);
+      });
+    }
+
     function onSquareClick(r,c){
       if(gameOver) return;
-
       const piece = board[r][c];
 
       if(selected){
         if(legalMoves.some(m => m[0] === r && m[1] === c)){
           const [sr, sc] = selected;
-          const captured = board[r][c] !== '';
-          board[r][c] = board[sr][sc];
-          board[sr][sc] = '';
-          selected = null;
-          legalMoves = [];
-          turn = turn === 'w' ? 'b' : 'w';
-          updateTurnInfo();
+          const movingPiece = board[sr][sc];
+          const isPawn = movingPiece.toUpperCase() === 'P';
+          const isLastRank = (r === 0 || r === 7);
 
-          if(captured){
-            captureSound.play();
-          } else {
-            moveSound.play();
+          function finalizeMove(promotedPiece = null){
+            board[r][c] = promotedPiece || movingPiece;
+            board[sr][sc] = '';
+            selected = null;
+            legalMoves = [];
+            turn = turn === 'w' ? 'b' : 'w';
+            updateTurnInfo();
+            renderBoard();
+            if(board[r][c] !== '' && sr !== r && board[r][c] !== movingPiece) captureSound.play();
+            else moveSound.play();
           }
 
-          renderBoard();
+          if(isPawn && isLastRank){
+            showPromotion(r, c, promotedPiece => finalizeMove(promotedPiece));
+          } else {
+            finalizeMove();
+          }
           return;
         }
 
@@ -367,7 +404,6 @@
         selected = null;
         legalMoves = [];
         renderBoard();
-        return;
       } else {
         if(piece && ((turn === 'w' && isWhite(piece)) || (turn === 'b' && isBlack(piece)))){
           selected = [r,c];
